@@ -10,8 +10,8 @@
  *       Revision:  none
  *       Compiler:  gcc
  *
- *         Author:  Nanjiang Shu (Shu), nanjiang@struc.su.se
- *        Company:  Structural Chemistry, Stockholm Univesity
+ *         Author:  Nanjiang Shu (Shu), nanjiang.shu@dbb.su.se
+ *        Company:  Department of Biochemistry and Biophysics, Stockholm Univesity
  *
  * =====================================================================================
  */
@@ -30,7 +30,7 @@
 #include <set>
 #include "array.h"
 #include "mytemplate.h"
-#include "myfunc.h"
+/*#include "myfunc.h"*/
 using namespace std;
 
 #if defined(_Windows) || defined(__WINDOWS__) || \
@@ -60,36 +60,332 @@ double poly_a1 = -0.0071;
 double poly_a2 = 1.8084;
 double poly_a3 = -11.4;
 
-void PrintHelp()
+void PrintHelp(char** argv)
 {
     fprintf(stdout,"Usage: calSOV [options] file1 file2 ...\n");
-    fprintf(stdout,"options:\n");
-    fprintf(stdout,"  -o|--out <outfile>  : output the result to outfile, default = stdout\n");
-    fprintf(stdout,"  -l|--list listfile  : set the file containing a list of predicted files\n");
-    fprintf(stdout,"  -f|--format 0|1|2|3 : set the format of the input file, default = 0\n");
-    fprintf(stdout,"  -q3|--isOutQ3 yes|no: wheter output q3, default = yes\n");
-    fprintf(stdout,"  -m|--method  0|1|2|3: set the method to get predicted secondary structure state from Res file, default = 1\n");
-    fprintf(stdout,"  -statq3             : anylyze the Q3 for residues predicted at different confidences \n");
-    fprintf(stdout,"  -chkfstdir          : folder to which Res from checkfirst program are stored, this need to be supplied when -statq3 is enabled \n");
-    fprintf(stdout,"  -selconf     0|1    : selection of the confidence, default = 0 \n");
-    fprintf(stdout,"                      : 0 -- raw confidence, 1 -- normalized confidence \n");
-    fprintf(stdout,"  -binwidth <real>    : set halfbinwidth, default = 1.0 \n");
-    fprintf(stdout,"  -max|--max-length   : set the max length of the sequence, default = %d\n", maxSeqLength);
-    fprintf(stdout,"  -proof|--proof      : enable proof reading\n");
-    fprintf(stdout,"  -proofmethod int    : set the method for proof reading, default = 0\n");
-    fprintf(stdout,"  -polypara a1 a2 a3  : input three parameters for polynormail function which normalize the confidence\n");
-    fprintf(stdout,"                      : default a1=%8.6lf , a2 = %8.6lf , a3 = %8.6lf \n", poly_a1, poly_a2 ,poly_a3);
-    fprintf(stdout,"  -h|--help           : print this help message and exit\n");
+    fprintf(stdout,"OPTIONS:\n");
+    fprintf(stdout,"  -o, --out <outfile>  : output the result to outfile, (default = stdout)\n");
+    fprintf(stdout,"  -l, --list listfile  : set the file containing a list of predicted files\n");
+    fprintf(stdout,"  -f, --format 0|1|2|3 : set the format of the input file, (default = 1)\n");
+    fprintf(stdout,"  -q3, --isOutQ3 yes|no: wheter output q3, (default = yes)\n");
+    fprintf(stdout,"  -m, --method  0|1|2|3: set the method to get predicted secondary structure state from Res file, (default = 1)\n");
+    fprintf(stdout,"  -statq3              : anylyze the Q3 for residues predicted at different confidences \n");
+    fprintf(stdout,"  -chkfstdir           : folder to which Res from checkfirst program are stored, this need to be supplied when -statq3 is enabled \n");
+    fprintf(stdout,"  -selconf     0|1     : selection of the confidence, (default = 0) \n");
+    fprintf(stdout,"                       : 0 -- raw confidence, 1 -- normalized confidence \n");
+    fprintf(stdout,"  -binwidth <real>     : set halfbinwidth, (default = 1.0) \n");
+    fprintf(stdout,"  -max, --max-length   : set the max length of the sequence, (default = %d)\n", maxSeqLength-1);
+    fprintf(stdout,"  -proof, --proof      : enable proof reading\n");
+    fprintf(stdout,"  -proofmethod int     : set the method for proof reading, (default = 0)\n");
+    fprintf(stdout,"  -polypara a1 a2 a3   : input three parameters for polynormail function which normalize the confidence\n");
+    fprintf(stdout,"                       : default a1=%8.6lf , a2 = %8.6lf , a3 = %8.6lf \n", poly_a1, poly_a2 ,poly_a3);
+    fprintf(stdout,"  -h, --help           : print this help message and exit\n");
     fprintf(stdout,"\n");
-    fprintf(stdout,"Created on 2009-07-23, updated 2009-10-29, Nanjiang Shu\n");
-    fprintf(stdout,"\n");
-    fprintf(stdout,"Format description:\n");
+    fprintf(stdout,"Created on 2009-07-23, updated 2016-11-03, Nanjiang Shu\n");
+    fprintf(stdout,"\nFormat description of input file:\n");
     fprintf(stdout,"    Format 0: prediction Res* file\n");
     fprintf(stdout,"    Format 1: AA OSEC PSEC NUM\n");
     fprintf(stdout,"    Format 2: Fasta format, >AA, >OSEC, >PSEC, order not important\n");
-    fprintf(stdout,"Examples:\n");
+    fprintf(stdout,"\nExamples:\n");
+    fprintf(stdout,"    %s -f 1 test/16VPA.psipred.format_1.txt\n", argv[0]);
+    fprintf(stdout,"    %s -f 2 test/16VPA.psipred.format_2.txt\n", argv[0]);
 }
 void PrintVerboseHelp() { }
+
+int my_strcpy(char* to, const char* from, int max)/*{{{*/
+/******************************************************************************
+ * my modification of strcpy
+ * copy max characters from "from" to "to", add NULL terminator automatically
+ * updated 2008-04-23, memcpy win in speed when the copying string is long
+ * updated 2011-10-27:
+ *   since calling strlen will be time consuming for very large from string,
+ *   e.g. when "from" is the buffer of a whole trunk of file. Therefore, strlen
+ *   part is removed.
+ *****************************************************************************/
+{
+    if(max < 200) {
+        strncpy(to,from,max);
+    } else {
+        memcpy(to,from,max);
+    }
+    to[max] = '\0';
+    return max;
+}/*}}}*/
+char *rootname(const char* filename, char* rtname, int max_rtname /*= MAX_PATH*/)/*{{{*/
+/*****************************************************************************
+ * rootname
+ * given the file name, 
+ * return the rootname of the filename
+ ****************************************************************************/
+{
+    const char *pch;
+    char *pstr;
+    if((pch = strrchr(filename,'/')) != NULL)
+        pstr = (char*) pch+1;
+    else
+        pstr = (char*) filename;
+
+    if((pch = strrchr(pstr,'.')) != NULL)
+        my_strcpy(rtname,pstr, min((int)(pch - pstr), max_rtname));
+    else
+        rtname = pstr;
+    return rtname;
+}
+/*}}}*/
+int option_parser_filename(int argc, char **argv, int beg, char *filename)/*{{{*/
+/*****************************************************************************
+ * beg is the current index of argument list, e.g., argv[i] = "--out"
+ ****************************************************************************/
+{
+    int i ; 
+    bool isNonOptionArg = false;
+    bool isFileNameSet = false;
+
+    for(i = beg +1 ; i < argc ; i++)
+    {
+        if(argv[i][0] == '-' && strcmp(argv[i], "--") != 0 && !isNonOptionArg)
+        {
+            fprintf(stderr,"option '%s' must be followed by a filename, not option\n", argv[beg]);
+            return -1;
+        }
+        else if(strcmp(argv[i], "--") == 0 && !isNonOptionArg)
+        {
+            isNonOptionArg = true;
+        }
+        else
+        {
+            my_strcpy(filename, argv[i], MAX_PATH-1);
+            isFileNameSet = true;
+            break;
+        }
+    }
+
+    if(!isFileNameSet)
+    {
+        fprintf(stderr,"option '%s' must be followed by a filename\n", argv[beg]);
+        return -1;
+    }
+    else 
+    {
+        return i+1;
+    }
+}
+/*}}}*/
+template <class T> int option_parser_numeric(int argc, char **argv, int beg, T &x, bool isRangeSet /*= false*/, T min /*= MIN_INT*/, T max /*= MAX_INT*/)/*{{{*/
+/*****************************************************************************
+ * beg is the current index of argument list, e.g., argv[i] = "--value"
+ ****************************************************************************/
+{
+    int i ; 
+    bool isValueSet = false;
+    double tmp;
+    i = beg +1;
+
+    if (i < argc)
+    {
+        if(IsNumeric(argv[i]))
+        {
+            tmp = atof(argv[i]);
+            if(isRangeSet)
+            {
+                if(tmp < min || tmp > max)
+                {
+                    fprintf(stderr,"Invalid value! Value after option '%s' must be in the range of [%g %g]\n", argv[beg], double(min), double(max));
+                    return -1;
+                }
+            }
+            x = T(tmp);
+            isValueSet = true;
+        }
+    }
+
+    if(!isValueSet)
+    {
+        fprintf(stderr,"option '%s' must be followed by a numerical value\n", argv[beg]);
+        return -1;
+    }
+    else 
+    {
+        return i+1;
+    }
+}
+template int option_parser_numeric<int>   (int argc, char **argv, int beg, int &x   , bool isRangeSet /*= false*/, int min /*= MIN_INT*/      , int max/* = MAX_INT*/);
+template int option_parser_numeric<float> (int argc, char **argv, int beg, float &x , bool isRangeSet /*= false*/, float min /*= MIN_FLOAT*/  , float max /*= MAX_FLOAT*/);
+template int option_parser_numeric<double>(int argc, char **argv, int beg, double &x, bool isRangeSet /*= false*/, double min/* = MIN_DOUBLE*/, double max /*= MAX_DOUBLE*/);
+template int option_parser_numeric<int8>(int argc, char **argv, int beg, int8 &x, bool isRangeSet /*= false*/, int8 min/* = MIN_DOUBLE*/, int8 max /*= MAX_DOUBLE*/);
+/*}}}*/
+int ReadNextSeq_FASTA(FILE *fp, char* seq, int *pSeq_type /*= NULL*/, int maxlength /*= LONGEST_SEQ*/, char* annotationLine/*=NULL*/, int maxSizeAnnotationLine /*=50*/)/*{{{*/
+    /****************************************************************************
+     * ReadNextSeq_FASTA()
+     * read in the fasta format sequence from the file stream 
+     * return the length of the sequence if successful
+     * return 0 or minus value if no more sequence can be read from the file stream
+     * The leading white spaces are ignored
+     * check the type (DNA or AA) of fasta sequence file based the annotation line 
+     * Last modified, 2007-02-12, Nanjiang Shu
+     * Updated 2010-04-22: the annotation line (without the leading ">") can be
+     * read in, note that the maxSizeAnnotationLine must be supplied
+     ***************************************************************************/
+{
+    int   c;
+    int   i;
+
+    do{  /* ignore the leading white spaces */ 
+        c = getc(fp);
+    }while(isspace(c));
+
+    if(pSeq_type != NULL) 
+        *pSeq_type = UNKNOWN_SEQ_TYPE; /* initializing sequence type*/
+
+    if(c  == '>') 
+    { 
+        Array1D <char> line_1darray(maxSizeAnnotationLine +1);
+        char *line = line_1darray.array1D;
+        fgetline(fp,line,maxSizeAnnotationLine);
+        if( pSeq_type != NULL)
+        {
+            if(strstr(line, "protein") != NULL)
+                *pSeq_type = AA_SEQ;
+            else if( strstr(line,"nucleic") != NULL)
+                *pSeq_type = DNA_SEQ;
+            else if( strstr(line,"shape") != NULL)
+                *pSeq_type = SHAPE_SEQ;
+            else
+                *pSeq_type = UNKNOWN_SEQ_TYPE;
+        }
+        if (annotationLine != NULL)
+        {
+            my_strcpy(annotationLine,line, maxSizeAnnotationLine-1);  /*read in the annotation line*/ 
+        }
+    }
+    else  
+    {
+        fseek(fp, -1, SEEK_CUR); /* backward 1 byte of file stream if there is no annotation line*/ 
+    }
+
+    i = 0 ;
+    while((c = getc(fp)) != EOF) 
+    {
+        if(c == '>') 
+        {
+            fseek(fp, -1, SEEK_CUR); /* backward 1 byte of file stream*/
+            break;  /* read in the first sequence if there are multiple sequences in the file*/ 
+        }
+        if(! isspace(c)) /* neglect white spaces and return characters in sequence region*/ 
+        {
+            seq[i] = c ; i ++ ;
+            if(i >= maxlength)
+            {
+                fprintf(stderr,"Error, sequence longer then maxlength = %d\n", maxlength);
+                return 1;
+
+            }
+        }
+    }
+    seq[i] = '\0' ;
+    if(c == EOF && i == 0)
+        return EOF;
+    else
+        return i; /* return the length of sequence*/ 
+}/*}}}*/
+
+bool IsNumeric(const char* str)/*{{{*/
+//**********************************************************************
+//IsNumeric(char*)
+//check if a string is a numeric number
+{
+	int i = 0;
+    int cntdot = 0;
+	while(str[i] != '\0')
+	{
+        if( i == 0)
+        {
+            if(!isdigit(str[i]) && str[i] != '+' && str[i] != '-' && str[i] != '.' )
+                return false;
+            if(str[i] == '.')
+                cntdot ++;
+        }
+        else
+        {
+            if(! isdigit(str[i]) && str[i] != '.')
+                return false;
+            if(str[i] == '.')
+                cntdot ++;
+        }
+        i ++;
+	}
+    if(cntdot >= 2)
+        return false;
+    else 
+        return true;
+}
+/*}}}*/
+bool IsInCharSet(const char ch, const char *charSet, int n /*= 0 */)/*{{{*/
+/*****************************************************************************
+ * check if the character "ch" is in charSet,
+ ****************************************************************************/
+{
+	if(n == 0)
+        n = strlen(charSet);
+    int i;
+	for(i = 0 ;i < n ; i ++)
+	{
+		if(ch == charSet[i])
+			return true;
+	}
+	return false;
+}/*}}}*/
+int fgetline(FILE* fp, char* line, int max/* = 0x7FFFFFFF*/)/*{{{*/
+/*****************************************************************************
+ * Read one line from fp, copying it to line array (but no more than max
+ * chars). Does not place terminating \n in line array.  
+ * it can be called without "max" flag, but should make sure the allocated
+ * memory for "line" is larger than the longest line.
+ *
+ * Returns: line length, or 0 for empty line, or "EOF" for end-of-file.
+ * 
+ * since fgetc(), getc(), getchar(), returns int value,always use an int
+ * variable to store the result of the fgetc(), getc() and getchar().  
+ * getc() is faster than fgetc()
+ *   LOG: 2006-04-26 16:31:29 Wednesday  Week 17 <nanjiang@shu>
+ *   bug fixed for '\n' return keys, 
+ *   now it is valid for both dos and unix
+ ****************************************************************************/
+{
+    int nch = 0; /* record number of characters actually read */
+    int c;
+    max = max - 1;			/* leave room for '\0' */
+    while((c = getc(fp)) != EOF)
+    {
+        if(c == 0x0d ) continue; /* in unix, '\n'= 0x0a, thus 0x0d will be cheated as another character*/ 
+        if(c == '\n') break; /* in dos, '\n' is also equal to 0x0a, but the preceding 0x0d will not be read*/ 
+
+        if(nch < max)
+        {
+            line[nch] = c;
+            nch = nch + 1;
+        }
+    }
+    line[nch] = '\0';
+
+    if(c == EOF && nch == 0) return EOF;
+    else return nch;
+}/*}}}*/
+int checkfilestream(FILE *fp, const char* filename, const char *mode, bool isAssert /*= false*/)/*{{{*/
+{
+    if( fp == NULL)
+    {
+        fprintf(stderr,"Can not open file '%s' with mode '%s'\n", filename,mode);
+        if(isAssert)
+        {
+            assert(fp != NULL);
+        }
+        return -1;
+    }
+    else
+        return 0;
+}
+/*}}}*/
 double GetRawHSRConfidence(int probH, int probS, int probR)/*{{{*/
 /*Determine raw confidence of the prediction based on the probability on H, S
  * and R
@@ -237,9 +533,56 @@ int ReadInSecPredFile(const char *infile, char *aaSeq, char *obsSec, char *predS
             aaSeq[cntRes] = aa;
             obsSec[cntRes] = obs_sec;
             predSec[cntRes] = pred_sec;
+#ifdef DEBUG
+            fprintf(stdout, "line=%s\n", line);
+            fprintf(stdout, "cntRes=%d\n", cntRes);
+#endif
             cntRes ++;
+            if (cntRes >= maxSeqLength){
+                fprintf(stdout,"Number of residues in the input file exceeds the maxSeqLength (%d). Please check your input file. Exit.\n", maxSeqLength);
+                assert(cntRes<maxSeqLength);
+            }
         } 
         seqLength = cntRes;
+    }/*}}}*/
+    else if (fileFormat == 2) /*Fasta format >AA, >OSEC, >PSEC*//*{{{*/
+    {
+        int maxSizeAnno = 100;
+        Array1D <char> anno_1darray(maxSizeAnno+1);
+        Array1D <char> tmpSeq_1darray(maxSeqLength+1);
+        char *tmpSeq = tmpSeq_1darray.array1D;
+        char *anno = anno_1darray.array1D;
+        int seqlength = 0;
+        /*>AA >OSEC >PSEC*/
+        int cntSeq = 0;
+        while((seqlength = ReadNextSeq_FASTA(fp, tmpSeq, NULL, maxSeqLength, anno, maxSizeAnno))!= EOF)
+        {
+            if(strstr(anno, "AA") != NULL){
+                my_strcpy(aaSeq,tmpSeq, maxSeqLength-1);
+            }else if(strstr(anno, "OSEC") != NULL){
+                my_strcpy(obsSec,tmpSeq, maxSeqLength-1);
+            }else if(strstr(anno, "PSEC") != NULL){
+                my_strcpy(predSec,tmpSeq, maxSeqLength-1);
+            }
+            cntSeq ++;
+            if (cntSeq>3){
+                fprintf(stderr, "You input file contains more than 3 sequences. Please check the format of your input file\n");
+                assert(cntSeq<=3);
+            }
+        }
+        int i = 0;
+        seqlength = strlen(obsSec);
+        for (i = 0; i<seqlength; i++){
+            if (obsSec[i] == 'E' ) { obsSec[i] = 'S'; }
+            else if (obsSec[i] == 'C' || obsSec[i] == 'L') { obsSec[i] = 'R'; }
+        }
+
+        seqlength = strlen(predSec);
+        for (i = 0; i<seqlength; i++){
+            if (predSec[i]  == 'E' ) { predSec[i] = 'S'; }
+            else if (predSec[i]  == 'C' || predSec[i]  == 'L') { predSec[i]  = 'R'; }
+        }
+        seqLength = strlen(aaSeq);
     }/*}}}*/
     if (fp != NULL) { fclose(fp); }
     return seqLength;
@@ -752,7 +1095,7 @@ int main(int argc, char** argv)/*{{{*/
 
     if(argc < 2) 
     {
-        PrintHelp();
+        PrintHelp(argv);
         return 0;
     }
     int i,j;
@@ -763,7 +1106,7 @@ int main(int argc, char** argv)/*{{{*/
     //bool isQuiet = false;
     //bool isSingle = false;
     bool isOutputQ3 = true;
-    int fileFormat = 0;
+    int fileFormat = 1;
     char chkFstFolder[MAX_PATH+1] ="";
     
     set <string> ::iterator iss;
@@ -793,7 +1136,7 @@ int main(int argc, char** argv)/*{{{*/
             }
             else if(strcmp(argv[i],"-h") == 0 ||strcmp(argv[i],"--help")==0 )
             {
-                PrintHelp(); 
+                PrintHelp(argv); 
                 return 0;
             }
             else if(strcmp(argv[i],"-H") == 0 )
@@ -987,7 +1330,7 @@ int main(int argc, char** argv)/*{{{*/
     totalNumSOVCorrectHSR_1darray.Init(0);
     totalNumSOVHSR_1darray.Init(0);
     totalSOVHSR_1darray.Init(0);
-    
+
 
     double *q3HSR = q3HSR_1darray.array1D;
     double *sovHSR = sovHSR_1darray.array1D;
@@ -1073,7 +1416,7 @@ int main(int argc, char** argv)/*{{{*/
 
     for(iss = fileList_set.begin(); iss != fileList_set.end(); iss ++)
     {
-        my_strcpy( infile, (*iss).c_str(), MAX_PATH);
+        my_strcpy( infile, (*iss).c_str(), MAX_PATH-1);
         rootname(infile, rtname);
         seqLength = ReadInSecPredFile(infile, aaSeq, obsSec, predSec,predConf, typeConfidence, fileFormat);
 
@@ -1091,7 +1434,7 @@ int main(int argc, char** argv)/*{{{*/
         }
 
         CalSOV(obsSec, predSec, seqLength, numSOVCorrectHSR, numSOVHSR, sovHSR, NUM_HSR_STATE);
-        fprintf(fpout,"%-10s %8.2f %6.2f %6.2f %6.2f %7d %7d %6d %6d %6d ", rtname,  sovHSR[3]*100.0,  sovHSR[0]*100.0, sovHSR[1]*100.0, sovHSR[2]*100.0, numSOVHSR[3],numSOVHSR[0], numSOVHSR[1],numSOVHSR[2], seqLength);
+        fprintf(fpout,"%-10.10s %8.2f %6.2f %6.2f %6.2f %7d %7d %6d %6d %6d ", rtname,  sovHSR[3]*100.0,  sovHSR[0]*100.0, sovHSR[1]*100.0, sovHSR[2]*100.0, numSOVHSR[3],numSOVHSR[0], numSOVHSR[1],numSOVHSR[2], seqLength);
         /*print out the result*/
         if (isOutputQ3)
         {
