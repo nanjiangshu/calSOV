@@ -1,0 +1,11 @@
+# Compiled source
+*.pyc
+
+
+# vim temp files
+.*.swp
+
+# backup folder
+bak/
+tmp/
+*.o
