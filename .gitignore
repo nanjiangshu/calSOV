@@ -9,3 +9,9 @@
 bak/
 tmp/
 *.o
+
+calSOV
+
+.svn/
+
+MPL2.txt
