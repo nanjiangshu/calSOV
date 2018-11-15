@@ -1,16 +1,24 @@
-#calSOV
+# calSOV
 
-##Description
+## Description
 calculate the Segment Overlap Score (SOV) score for the predicted secondary
 structures
 
-##Author
+## Author
 Nanjiang Shu
 
 Email: nanjiang.shu@scilifelab.se
 
+## Reference
 
-#Installation
+Zemla A, Venclovas C, Fidelis K, Rost B., "A modified definition of Sov, a
+segment-based measure for protein secondary structure prediction assessment.",
+Proteins, 1999, 34(2), pp. 220-3
+
+Note: when the observed secondary structure contains unknown structures, the
+calculation might be different compared to e.g. SOV\_refine.
+
+## Installation
 This installation has been tested on Ubuntu and CentOS
 Requirement: g++
 
@@ -22,7 +30,7 @@ If need to be installed to a customized location
 
 		make "BINPATH=/your/path" install
 
-#Usage
+## Usage
 
 ```
 Usage: calSOV [options] file1 file2 ...
@@ -52,6 +60,7 @@ Format description of input file:
     Format 2: Fasta format, >AA, >OSEC, >PSEC, order not important
 
 Examples:
+    ./calSOV -f 2 test/test1_f2.txt  # the same example as in the reference
+    ./calSOV -f 2 test/test2_f2.txt
     ./calSOV -f 1 test/16VPA.psipred.format_1.txt
-    ./calSOV -f 2 test/16VPA.psipred.format_2.txt
 ```
