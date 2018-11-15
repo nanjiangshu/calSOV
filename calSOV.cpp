@@ -28,6 +28,9 @@
 #include <stdlib.h>
 #include <algorithm>
 #include <set>
+#include <list>
+#include <vector>
+#include <utility>
 #include "array.h"
 #include "mytemplate.h"
 /*#include "myfunc.h"*/
@@ -92,6 +95,15 @@ void PrintHelp(char** argv)
 }
 void PrintVerboseHelp() { }
 
+int coverage(int a1, int b1, int a2, int b2)
+    /*
+    return the coverage of two intervals
+    a1, b1, a2, b2 are integers
+    when the return value <=0, it means there is no coverage
+    */
+{
+    return (min(b1,b2)-max(a1,a2));
+}
 int my_strcpy(char* to, const char* from, int max)/*{{{*/
 /******************************************************************************
  * my modification of strcpy
@@ -750,7 +762,116 @@ int ReadConf(const char *infile, double *predConf, int typeConfidence)/*{{{*/
     if (fp != NULL) { fclose(fp); }
     return seqLength;
 }/*}}}*/
+list < pair <int, int > > GetSecSeg(char *seq, char state, int seqLength)/*{{{*/
+    /*Get segment list for a certain secondary structure state*/
+{
+    list < pair <int,int> > segList;
+    pair <int, int> seg;
+    int i,j;
+    i = 0;
+    while (i < seqLength) 
+    {
+        int b, e;
+        if (seq[i] == state)
+        {
+            b = i;
+            j = i;
+            while (j < seqLength && seq[j] == state)
+            {
+                j ++;
+            }
+            e = j;
+            i = j;
+            seg = make_pair(b,e);
+            segList.push_back(seg);
+        }
+        else
+        {
+            i ++;
+        }
+    }
+    return segList;
+}
+/*}}}*/
 int CalSOV(char *obsSec, char *predSec, int seqLength, double *numCorrectHSR, int *numHSR, double *sovHSR, int numState = 3)/*{{{*/
+{
+    list <list <pair <int, int> > > segment_obs;
+    list <list <pair <int, int> > > segment_pred;
+    list <list <pair <int, int> > >::iterator it_sl_1;
+    list <list <pair <int, int> > >::iterator it_sl_2;
+    list <pair <int, int> > ::iterator it_seg_1;
+    list <pair <int, int> > ::iterator it_seg_2;
+    int i = 0;
+
+    for (i = 0; i < 3; i ++) /*iterator for secondary structure states*/
+    {
+        list <pair <int, int> > segList;
+        segList = GetSecSeg(obsSec, HSRalphabet[i], seqLength);
+        segment_obs.push_back(segList);
+        segList = GetSecSeg(predSec, HSRalphabet[i], seqLength);
+        segment_pred.push_back(segList);
+    }
+    vector <int> N(3,0); /*Normalization value*/
+    vector <double> sum_un_norm(3,0.0); /*sum of un-normalized score*/
+    int total_N = 0;
+    double total_sum_un_norm = 0.0;
+
+    int b1, e1, b2, e2, minov, maxov, delta, len_seg1, len_seg2;
+    double score;
+    for (i = 0; i < 3; i ++) /*iterator for secondary structure states*/
+    {
+        /*For all segments of the observed secondary structure*/
+        it_sl_1 = segment_obs.begin();
+        advance( it_sl_1, i );
+
+        it_sl_2 = segment_pred.begin();
+        advance( it_sl_2, i );
+
+        for (it_seg_1 = (*it_sl_1).begin(); it_seg_1 != (*it_sl_1).end(); ++it_seg_1)
+        {
+            b1 = (*it_seg_1).first;
+            e1 = (*it_seg_1).second;
+            len_seg1 = e1-b1;
+            bool isOverlap = false;
+            for (it_seg_2 = (*it_sl_2).begin(); it_seg_2 != (*it_sl_2).end(); ++it_seg_2)
+            {
+                b2 = (*it_seg_2).first;
+                e2 = (*it_seg_2).second;
+                len_seg2 = e2-b2;
+                minov = coverage(b1, e1, b2, e2);
+                if (minov > 0) {
+                    maxov = max(e1,e2) - min(b1,b2);
+                } else {
+                    maxov = 0;
+                }
+                if (minov > 0)
+                {
+                    isOverlap = true;
+                    double min1 = min(maxov - minov, minov);
+                    double min2 = min(int(len_seg1/2), int(len_seg2/2));
+                    delta = min(min1, min2);
+                    score = (minov + delta)/double(maxov)*len_seg1;
+                    sum_un_norm[i] += score;
+                    N[i] += len_seg1;
+                }
+            }
+            if (isOverlap == false) {
+                N[i] += len_seg1;
+            }
+        }
+        sovHSR[i] = sum_un_norm[i]/N[i];
+        total_sum_un_norm += sum_un_norm[i];
+        total_N += N[i];
+        numHSR[i] = N[i];
+    }
+    sovHSR[numState] = total_sum_un_norm/total_N;
+    numHSR[numState] = total_N;
+
+   return numHSR[numState];
+
+}/*}}}*/
+
+int CalSOV_obsolete(char *obsSec, char *predSec, int seqLength, double *numCorrectHSR, int *numHSR, double *sovHSR, int numState = 3)/*{{{*/
     /*=======================================================================
      * numHSR[4] Helix, Sheet, Coil, All
      * sovHSR[4]
@@ -778,7 +899,7 @@ int CalSOV(char *obsSec, char *predSec, int seqLength, double *numCorrectHSR, in
     for (iterHSRState=0; iterHSRState<3; iterHSRState++)//corrsponding to H, S, R
     {
         //for helix
-        int HSRLen = 0;/*length of secondary structure elements*/
+        int HSRLen = 0;/*iterator for secondary structure elements*/
         thisHSRstate = HSRalphabet[iterHSRState];
         for(i=0; i<Length; i++)
         { 
